@@ -1,87 +1,111 @@
-# 🚌 Urban Mobility Simulation — Havana, Cuba
+# Urban Mobility Optimization Simulation
 
-An AI-powered multi-agent simulation of urban transport mobility in Havana, developed as a Computer Science thesis project at the University of Havana. The simulation models bus and taxi routes across the city and estimates how many inhabitants are in each municipality throughout a 24-hour period.
+An academic Python prototype for modelling urban transport operations in Havana, Cuba. The project combines a real OpenStreetMap road network with vehicle, passenger-demand, traffic-light, maintenance, and route-assignment models.
 
-**Language:** Python 3
-**Key libraries:** NetworkX, NumPy, Pyrosm, GeoPandas, Folium
+> **Project status:** research prototype. The repository contains the simulation domain model and map-processing experiments, but it does not currently provide a single turnkey command that runs a complete 24-hour experiment or exports benchmark metrics.
 
----
+## Why this project matters
 
-## 🎯 Problem
+Urban transport operators must assign limited vehicle capacity to passenger demand while dealing with route distance, traffic lights, breakdowns, maintenance, fuel cost, and budget constraints. This project explores those decisions with a multi-agent model that can be extended for transport planning experiments.
 
-Simulate the mobility of Havana's population using the city's real road network (OpenStreetMap data), modelling bus networks (Metrobús) and taxis (Metrotaxi). The goal is to estimate the distribution of inhabitants across Havana's municipalities over 24 hours.
+## Current capabilities
 
-**Demographic data source:** ONEI Cuba — *Estudio y Datos de Población 2023*
-**Spatial data source:** OpenStreetMap via Geofabrik (PBF format), processed with Pyrosm
+- Models transport vehicles, a transport company, traffic lights, stops, routes, passenger demand, maintenance, breakdowns, fuel costs, fines, and budget state.
+- Loads a drivable road network from an OpenStreetMap `.osm.pbf` extract with **Pyrosm**.
+- Uses **NetworkX** weighted shortest paths to expand stop sequences into road-level routes and to support rerouting.
+- Contains route-assignment hooks for simulated annealing and ant-colony optimisation.
+- Includes exploratory map visualisation and geocoding code in `src/map/map-visual.py`.
 
----
+The implementation is intentionally preserved as a prototype: several optimisation and planning symbols referenced by `src/ia/agents.py` are not defined in the current repository, so those paths should be treated as extension points rather than advertised as a complete executable pipeline.
 
-## 🏗 Architecture
+## Architecture
 
-### Agents (`src/ia/agents.py`)
-
-#### `Vehicle`
-Represents a transport vehicle. Key properties: `id`, `capacity`, `total_km`, `km_traveled`, `route`, `people_on_board`, `risk_probability`, `speed`.
-
-Key methods:
-- `move(global_time)` — advances to the next stop on the assigned route, updates km traveled
-- `load(global_time)` — picks up passengers at the current stop; diverts to depot if at full capacity
-- `unload(global_time)` — drops off all passengers at a stop
-- `at_semaphore(global_time)` — handles traffic light logic (green/amber/red), probabilistic amber-running
-- `broken(global_time)` — simulates breakdown; halts vehicle and returns repair wait time and cost
-- `change_route()` — reroutes using Dijkstra's shortest path to avoid an unavailable segment
-- `go_to_depot()` — builds a detour route to the depot and back when the vehicle is full
-- `goal_test()` — returns `True` when the vehicle has finished its route and all stops are empty
-
-#### `Semaphore`
-Traffic light with randomised green/red durations and a fixed 3-second amber. Updates state via `update_color(global_time)` using modular time arithmetic.
-
-#### `Company`
-The transport company agent. Key properties: `vehicles`, `clients`, `budget`, `depot`, `substitute` (maintenance substitutions).
-
-Key methods:
-- `assign()` — full pipeline: assigns vehicles to clients → assigns stops to vehicles → computes routes
-- `start_route(vehicle_id, route_id)` — resets a vehicle and puts it on its assigned route
-- `check_vehicle(vehicle_id)` — sends a vehicle to maintenance if `km_traveled ≥ ¾ total_km`
-- `find_replacement(vehicle)` — finds a substitute from available vehicles, other client vehicles, or buys a new one if budget allows
-- `pay_taxes(vehicle_id)` — settles fuel costs, service income, and fines for a completed route
-- `plan()` — returns a `PlanningProblem` list for each vehicle (actions: `start_route`, `pay_taxes`, `check_vehicle`)
-- `bankruptcy()` — returns `True` if `budget ≤ 0`
-
----
-
-## 🤖 AI Techniques
-
-### Ant Colony Optimisation (ACO)
-Used to find the optimal visiting order for stops assigned to each vehicle. Ants probabilistically choose the next stop based on pheromone trails and inter-stop distances. Pheromone evaporates each iteration to avoid premature convergence.
-
-### Simulated Annealing (SA)
-Two SA instances are used in route assignment:
-- `SimulatedAnnealingVehiclesToClients` — assigns vehicles to clients, respecting capacity vs demand
-- `SimulatedAnnealingRouteToVehicle` — assigns specific stops within a client's set to each assigned vehicle
-
-Both start from a random solution and iteratively improve via probabilistic hill-climbing, with temperature decreasing over a fixed number of iterations.
-
-### Shortest Path (Dijkstra via NetworkX)
-Used throughout for computing concrete step-by-step routes between stops on the road graph, and for rerouting when a segment is unavailable.
-
-### AI Planning (STRIPS-style)
-`Company.plan()` generates a `PlanningProblem` per vehicle using three actions (`start_route`, `pay_taxes`, `check_vehicle`) with explicit preconditions and effects, solved with uniform-cost search.
-
----
-
-## 🗺 Map (`src/map/`)
-
-`map.py` loads the OpenStreetMap PBF file for Cuba and extracts the drivable road network for a Havana bounding box using Pyrosm.
-
-`map-visual.py` contains exploratory code for visualising the network with GeoPandas/Matplotlib and geocoding addresses with Geopy/Nominatim, generating interactive maps with Folium.
-
----
-
-## 🚀 Setup
-
-```bash
-pip install networkx numpy pyrosm geopandas folium geopy matplotlib
+```mermaid
+flowchart LR
+    D[OpenStreetMap PBF] --> M[src/map/map.py]
+    M --> G[Weighted road graph]
+    G --> C[Company]
+    C --> V[Vehicle agents]
+    C --> R[Stop and route assignment]
+    V --> S[Traffic lights, breakdowns, maintenance]
+    S --> O[Logs and budget state]
+    M --> X[src/map/map-visual.py]
+    X --> P[Exploratory maps]
 ```
 
-Download the Cuba OSM extract from [Geofabrik](https://download.geofabrik.de/central-america/cuba.html) and place it at the path defined in `src/map/map.py`.
+### Main components
+
+| Component | Responsibility |
+| --- | --- |
+| `Vehicle` | Tracks capacity, position, route progress, passengers, distance, speed, failures, and maintenance state. |
+| `Semaphore` | Simulates green, amber, and red phases with randomised cycle lengths. |
+| `Company` | Assigns vehicles and stops, starts routes, accounts for income and fuel, checks maintenance, and manages replacements. |
+| `src/map/map.py` | Creates a Pyrosm road-network view for a Havana bounding box. |
+| `src/map/map-visual.py` | Exploratory GeoPandas, Matplotlib, Folium, and Nominatim experiments. |
+
+## Algorithms and modelling choices
+
+- **Weighted shortest path:** NetworkX Dijkstra-style shortest paths convert stop sequences into traversable road-node routes and support temporary edge avoidance during rerouting.
+- **Ant colony optimisation hook:** `Company.__get_route_of_vehicles()` calls `AntColony` to choose an order for assigned stops. The referenced implementation is not included in the current tracked source.
+- **Simulated annealing hooks:** vehicle-to-client and stop-to-vehicle assignment call `SimulatedAnnealingVehiclesToClients` and `SimulatedAnnealingRouteToVehicle`. Their implementations are also not included in the current tracked source.
+- **Agent-based state transitions:** vehicles and the company update operational state over time, including passenger loading, unloading, traffic-light waiting, breakdowns, maintenance, replacement, and financial accounting.
+
+These descriptions distinguish implemented domain behaviour from referenced extension points so the repository remains technically accurate.
+
+## Data sources
+
+- **Road network:** OpenStreetMap data distributed as a Cuba extract by [Geofabrik](https://download.geofabrik.de/central-america/cuba.html). A PBF extract is currently checked into `src/map/cuba-map/`.
+- **Population context:** The original thesis context cites ONEI Cuba's *Estudio y Datos de Población 2023*. No demographic input file is currently included in this repository; passenger demand must therefore be supplied by a caller or future data-ingestion layer.
+- **Geocoding experiments:** `src/map/map-visual.py` uses the public Nominatim service. Respect its usage policy and configure a descriptive user agent for any repeated or production use.
+
+## Setup
+
+Python 3.10+ is recommended. Create an isolated environment and install the pinned top-level dependencies:
+
+```bash
+python -m venv .venv
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+# macOS/Linux
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+`pyrosm` and its geospatial dependencies may require platform-specific wheels or build tools. If installation fails, use a compatible Python version and follow the package installation guidance for your operating system.
+
+The checked-in PBF is large. For a fresh or smaller checkout, download the Cuba extract from Geofabrik and place it at `src/map/cuba-map/cuba-latest.osm.pbf`.
+
+## Running and validating
+
+There is no single application entry point yet. The code can be imported and syntax-checked as follows:
+
+```bash
+python -m py_compile file.py src/ia/agents.py src/map/map.py src/map/map-visual.py
+```
+
+Before using `src/map/map.py` on a new machine, update its `pbf_file_path` to the local PBF location. The current source retains the original thesis workstation path for backwards compatibility.
+
+For a complete experiment, a future runner should construct a NetworkX graph, map demand to stop objects, instantiate `Vehicle` and `Company`, advance simulation time, and export metrics such as passenger throughput, vehicle-kilometres, average waiting time, maintenance events, fuel cost, and ending budget.
+
+## Results and reproducibility
+
+No benchmark dataset, experiment configuration, or generated metric table is currently committed, so this repository does not make quantitative performance claims. Reproducible evaluation is a clear next step: fix random seeds, version the demand scenario, record algorithm parameters, and export machine-readable results for each run.
+
+## Limitations and next steps
+
+- Add a maintained executable runner and scenario configuration format.
+- Implement or vendor the optimisation and planning classes currently referenced by `agents.py`.
+- Replace hard-coded local paths with command-line or environment configuration.
+- Add deterministic seeds, unit tests for accounting and route transitions, and integration tests on a small fixture graph.
+- Add demand data with documented provenance and privacy considerations.
+- Record benchmark outputs and compare routing strategies against simple baselines.
+- Separate exploratory notebook-style scripts from reusable library code.
+
+## Technologies
+
+**Python · NetworkX · NumPy · Pyrosm · GeoPandas · Pandas · Folium · Matplotlib · Geopy · Osmium**
+
+## Best-fit roles
+
+This project is a strong portfolio example for **Data Scientist**, **Operations Research / Optimization Engineer**, **Machine Learning Engineer (simulation and planning)**, **Urban Mobility Analyst**, and **Python Research Engineer** roles. It is most compelling when discussed as an algorithmic prototype and research foundation, rather than as a production-ready transport platform.

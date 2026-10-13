@@ -1,0 +1,9 @@
+geopandas
+folium
+geopy
+matplotlib
+networkx
+numpy
+osmium
+pandas
+pyrosm
